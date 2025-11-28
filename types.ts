@@ -34,7 +34,8 @@ export interface CalendarEvent {
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
-  type: 'tax' | 'holiday' | 'admin';
+  type: 'tax' | 'holiday' | 'admin' | 'receivable';
+  amount?: number;
 }
 
 export interface ChatMessage {
@@ -48,8 +49,8 @@ export interface ChatMessage {
 export interface DetectedIntent {
   type: 'NAVIGATE' | 'CREATE_DOC' | 'QUERY_TAX' | 'UNKNOWN';
   confidence: number;
-  payload: any; // e.g., { targetScreen: 'documents' } or { amount: 100 }
-  summary: string; // "Parece que você quer cadastrar uma nota de R$100"
+  payload: any;
+  summary: string;
 }
 
 export interface AppNotification {
@@ -57,7 +58,25 @@ export interface AppNotification {
   message: string;
   actionLabel?: string;
   onAction?: () => void;
-  type: 'info' | 'proposal' | 'alert';
+  type: 'info' | 'proposal' | 'alert' | 'agent-debug';
+}
+
+// Widget System
+export type WidgetType = 'calendar_official' | 'tax_summary' | 'revenue_projection' | 'sector_expenses' | 'alerts_feed';
+
+export interface WidgetConfig {
+  id: string;
+  type: WidgetType;
+  title: string;
+  w: number; // width col span
+  h: number; // height row span
+}
+
+export interface FinancialRecord {
+  category: string;
+  amount: number;
+  date: string;
+  type: 'income' | 'expense';
 }
 
 // Schema for Gemini Intent Deduction

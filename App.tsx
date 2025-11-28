@@ -1,16 +1,19 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppNotification, DetectedIntent, UserProfile } from './types';
 import Dashboard from './components/Dashboard';
 import DocumentUploader from './components/DocumentUploader';
 import ChatAdvisor from './components/ChatAdvisor';
 import SmartInput from './components/SmartInput';
-import { getOfficialFeed, mockOAuthLogin } from './services/officialData';
+import DebugConsole from './components/DebugConsole'; // New
+import AssistantBar from './components/AssistantBar'; // New
+import CustomReports from './components/CustomReports'; // New
+import { getOfficialFeed, mockOAuthLogin } from './services/mockData';
 import { deduceUserIntent } from './services/geminiService';
 import { getProfile, getDocuments } from './services/storageService';
 
 const App: React.FC = () => {
   // Navigation State
-  const [currentView, setCurrentView] = useState<'dashboard' | 'docs' | 'settings'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'docs' | 'settings' | 'reports'>('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [isDrawerOpen, setDrawerOpen] = useState(false);
 
@@ -19,13 +22,16 @@ const App: React.FC = () => {
   const [notification, setNotification] = useState<AppNotification | null>(null);
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
 
+  // Debug State
+  const [agentCapturedInfo, setAgentCapturedInfo] = useState<string | null>(null);
+
   // Rage Click Detection
   const clickHistory = useRef<number[]>([]);
   const handleGlobalClick = () => {
     const now = Date.now();
     clickHistory.current.push(now);
-    clickHistory.current = clickHistory.current.filter(t => now - t < 1000); // Keep last 1 second
-    if (clickHistory.current.length > 4) {
+    clickHistory.current = clickHistory.current.filter(t => now - t < 1000); 
+    if (clickHistory.current.length > 5) { // Increased threshold slightly
       setNotification({
         id: 'rage-click',
         message: 'Parece que você está com dificuldades. Quer falar com o assistente?',
@@ -33,15 +39,13 @@ const App: React.FC = () => {
         actionLabel: 'Abrir Chat',
         onAction: () => setDrawerOpen(true)
       });
-      clickHistory.current = []; // Reset
+      clickHistory.current = [];
     }
   };
 
   useEffect(() => {
-    // Initial Data Load simulation
     const loadData = async () => {
       const storedProfile = getProfile();
-      // If valid profile exists (has company name), use it, else do mock login
       if (storedProfile.companyName) {
          setProfile(storedProfile);
       } else {
@@ -51,7 +55,6 @@ const App: React.FC = () => {
     };
     loadData();
 
-    // Responsive check
     const handleResize = () => {
       if (window.innerWidth < 768) setSidebarOpen(false);
       else setSidebarOpen(true);
@@ -61,27 +64,42 @@ const App: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Voice/Intent Logic
+  // Debug Event Handler
+  const handleDebugTrigger = (type: string, payload: any) => {
+    if (type === 'CAPTURE') {
+       // Show the "Agent Capture" Debug Popup
+       setAgentCapturedInfo(payload.summary);
+       // Auto-hide after 4 seconds
+       setTimeout(() => setAgentCapturedInfo(null), 4000);
+    } else if (type === 'CONTEXT_MOVE') {
+       setNotification({
+          id: Date.now().toString(),
+          message: 'O assistente encontrou dados financeiros no chat. Deseja criar um widget?',
+          type: 'proposal',
+          actionLabel: 'Criar Widget',
+          onAction: () => setCurrentView('reports')
+       });
+    }
+  };
+
   const handleVoiceCommand = async (transcript: string) => {
     setIsProcessingVoice(true);
     const intent: DetectedIntent = await deduceUserIntent(transcript);
     setIsProcessingVoice(false);
 
     if (intent.confidence > 0.6) {
-      // Create a proposal notification
       setNotification({
         id: Date.now().toString(),
         message: intent.summary,
         type: 'proposal',
         actionLabel: 'Executar',
         onAction: () => {
-          // Route based on intent
           if (intent.type === 'NAVIGATE') {
              if (intent.payload?.target?.includes('doc')) setCurrentView('docs');
              if (intent.payload?.target?.includes('dash')) setCurrentView('dashboard');
+             if (intent.payload?.target?.includes('rep')) setCurrentView('reports');
           } else if (intent.type === 'QUERY_TAX') {
              setDrawerOpen(true);
-             // In a real app, we would inject the query into the chat here
           }
           setNotification(null);
         }
@@ -100,8 +118,18 @@ const App: React.FC = () => {
   );
 
   return (
-    <div onClick={handleGlobalClick} className="min-h-screen bg-slate-100 flex font-sans text-slate-900 overflow-hidden">
+    <div onClick={handleGlobalClick} className="min-h-screen bg-slate-100 flex font-sans text-slate-900 overflow-hidden relative">
       
+      <DebugConsole onTriggerEvent={handleDebugTrigger} />
+
+      {/* Agent Capture Debug Popup */}
+      {agentCapturedInfo && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-slate-800 text-green-400 px-4 py-2 rounded shadow-xl border border-green-500/30 font-mono text-xs flex items-center gap-2 animate-bounce-short">
+          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+          <span>AGENT_BG_CAPTURE: {agentCapturedInfo}</span>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className={`fixed md:relative z-30 h-full bg-slate-900 w-64 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:w-20 lg:w-64'} flex flex-col justify-between shadow-2xl`}>
         <div>
@@ -112,8 +140,13 @@ const App: React.FC = () => {
           <nav className="mt-6 space-y-1">
             <NavItem 
               view="dashboard" 
-              label="Painel Principal" 
+              label="Visão Geral" 
               icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>}
+            />
+            <NavItem 
+              view="reports" 
+              label="Relatórios & Widgets" 
+              icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
             />
             <NavItem 
               view="docs" 
@@ -128,7 +161,6 @@ const App: React.FC = () => {
           </nav>
         </div>
         
-        {/* User Info / Logout */}
         <div className="p-4 border-t border-slate-800">
            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold">
@@ -142,9 +174,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        {/* Mobile Header */}
         <header className="md:hidden h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 shrink-0">
            <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="text-slate-600">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -155,39 +185,24 @@ const App: React.FC = () => {
            </button>
         </header>
 
-        {/* Content Scrollable */}
-        <div className="flex-1 overflow-y-auto bg-slate-100 relative">
+        <div className="flex-1 overflow-y-auto bg-slate-100 relative scroll-smooth">
           {currentView === 'dashboard' && profile && <Dashboard profile={profile} documents={getDocuments()} feed={getOfficialFeed()} />}
+          {currentView === 'reports' && <CustomReports />}
           {currentView === 'docs' && <DocumentUploader />}
           {currentView === 'settings' && (
              <div className="p-8 max-w-2xl mx-auto">
-                <h2 className="text-2xl font-bold mb-6">Configurações da Conta</h2>
+                <h2 className="text-2xl font-bold mb-6">Configurações</h2>
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 space-y-4">
                    <SmartInput label="Nome Fantasia" value={profile?.companyName || ''} onChange={() => {}} onVoiceInput={handleVoiceCommand} />
                    <SmartInput label="CNPJ" value={profile?.cnpj || ''} onChange={() => {}} />
-                   <div className="pt-4 border-t border-slate-100">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                         <input type="checkbox" className="form-checkbox h-5 w-5 text-blue-600 rounded" defaultChecked />
-                         <span className="text-sm text-slate-700">Permitir análise automática de documentos</span>
-                      </label>
-                   </div>
                 </div>
              </div>
           )}
         </div>
 
-        {/* Floating Action Button (Desktop Only - discreet) */}
-        <div className="hidden md:block absolute bottom-8 right-8">
-           <button 
-             onClick={() => setDrawerOpen(true)}
-             className="bg-slate-900 hover:bg-slate-800 text-white rounded-full p-4 shadow-lg transition-transform hover:scale-105"
-             title="Assistente IA"
-           >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-           </button>
-        </div>
+        {/* Assistant Floating Bar (Replaces floating button) */}
+        {!isDrawerOpen && <AssistantBar currentView={currentView} onOpenAssistant={() => setDrawerOpen(true)} />}
 
-        {/* Notification Toast */}
         {notification && (
            <div className="absolute top-6 right-6 md:right-10 z-50 animate-slide-in">
               <div className="bg-white border-l-4 border-blue-500 shadow-xl rounded-r-lg p-4 max-w-sm flex flex-col gap-2">
@@ -213,10 +228,13 @@ const App: React.FC = () => {
       {/* Right Drawer (Chat/Assistant) */}
       {isDrawerOpen && (
         <>
-          <div className="fixed inset-0 bg-black/20 z-40 backdrop-blur-sm" onClick={() => setDrawerOpen(false)} />
-          <div className="fixed right-0 top-0 h-full w-full md:w-96 bg-white shadow-2xl z-50 transform transition-transform flex flex-col border-l border-slate-200">
+          <div className="fixed inset-0 bg-black/20 z-40 backdrop-blur-sm transition-opacity" onClick={() => setDrawerOpen(false)} />
+          <div className="fixed right-0 top-0 h-full w-full md:w-96 bg-white shadow-2xl z-50 transform transition-transform flex flex-col border-l border-slate-200 animate-slide-in-right">
              <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
-                <h3 className="font-bold text-slate-700">Assistente Contábil</h3>
+                <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                  Assistente Contábil
+                </h3>
                 <button onClick={() => setDrawerOpen(false)} className="p-2 bg-white rounded-full border border-slate-200 hover:bg-slate-100 text-slate-500">
                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
@@ -224,7 +242,6 @@ const App: React.FC = () => {
              <div className="flex-1 overflow-hidden">
                 <ChatAdvisor />
              </div>
-             {/* Contextual Action Buttons in Drawer */}
              <div className="p-4 bg-slate-50 border-t border-slate-200 grid grid-cols-2 gap-2">
                 <button className="text-xs bg-white border border-slate-300 p-2 rounded text-slate-600 hover:border-blue-500 hover:text-blue-600">Consultar Lei 123</button>
                 <button className="text-xs bg-white border border-slate-300 p-2 rounded text-slate-600 hover:border-blue-500 hover:text-blue-600">Recalcular DAS</button>
@@ -233,12 +250,8 @@ const App: React.FC = () => {
         </>
       )}
 
-      {/* Loading Overlay */}
       {isProcessingVoice && (
-         <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-3">
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce delay-100"></div>
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce delay-200"></div>
+         <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-3">
             <span className="text-sm font-medium">Analisando...</span>
          </div>
       )}

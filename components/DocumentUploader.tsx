@@ -38,6 +38,7 @@ const DocumentUploader: React.FC = () => {
         amount: analysis.amount || 0,
         tags: analysis.tags || [],
         summary: analysis.summary || "Sem resumo disponível",
+        status: 'pending',
         alerts: analysis.alerts || [],
         imageUrl: base64Data
       };
