@@ -1,0 +1,9 @@
+{
+  "name": "Contador Amigo",
+  "description": "Seu assistente contábil pessoal, simples e seguro. Controle suas contas, documentos e obrigações fiscais com a ajuda de inteligência artificial.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
